@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Undertale: Битва с Джорджем Флойдом</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', monospace;
+            background-color: #000;
+            color: #fff;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        .pixel-art {
+            image-rendering: pixelated;
+        }
+
+        /* Undertale UI Button Styles */
+        .ut-btn {
+            border: 3px solid #ff7900;
+            color: #ff7900;
+            background-color: #000;
+            transition: all 0.1s ease;
+            font-size: 13px;
+            padding: 10px 12px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .ut-btn.selected, .ut-btn:hover {
+            border-color: #ffff00;
+            color: #ffff00;
+            background-color: #000;
+        }
+
+        .ut-btn.selected::before, .ut-btn:hover::before {
+            content: "❤";
+            font-size: 12px;
+            color: #ff0000;
+        }
+
+        @keyframes shake {
+            0% { transform: translate(0, 0); }
+            20% { transform: translate(-12px, 0); }
+            40% { transform: translate(12px, 0); }
+            60% { transform: translate(-8px, 0); }
+            80% { transform: translate(8px, 0); }
+            100% { transform: translate(0, 0); }
+        }
+        .boss-shake {
+            animation: shake 0.35s ease-in-out;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-2 sm:p-4 overflow-hidden select-none">
+
+    <div class="w-full max-w-2xl bg-black border-4 border-gray-800 p-4 rounded-lg flex flex-col items-center relative">
+        
+        <!-- Boss Title & HP Bar -->
+        <div class="w-full mb-2 flex justify-between items-center text-xs text-gray-300">
+            <span id="boss-title" class="font-bold text-yellow-400">ДЖОРДЖ ФЛОЙД</span>
+            <div class="w-1/2 bg-gray-900 border-2 border-gray-600 h-5 rounded-sm overflow-hidden relative">
+                <div id="boss-hp-bar" class="bg-green-500 h-full w-full transition-all duration-300"></div>
+            </div>
+        </div>
+
+        <!-- Boss Display Area -->
+        <div class="w-full flex justify-center items-center h-56 relative mb-2">
+            <canvas id="bossCanvas" width="240" height="220" class="pixel-art"></canvas>
+            
+            <!-- Speech Bubble -->
+            <div id="speech-bubble" class="absolute top-2 right-2 sm:right-6 bg-white text-black p-3 rounded-xl border-2 border-black max-w-[210px] text-[10px] leading-relaxed hidden shadow-xl z-20">
+                <span id="speech-text">...</span>
+            </div>
+        </div>
+
+        <!-- Undertale Battle Box & Text Screen -->
+        <div class="relative w-full flex justify-center mb-4">
+            <canvas id="battleCanvas" width="440" height="190" class="border-4 border-white bg-black rounded-sm shadow-inner cursor-pointer"></canvas>
+            
+            <!-- Menu Text Display Layer -->
+            <div id="menu-text-box" class="absolute inset-0 p-4 text-white text-xs leading-relaxed flex flex-col justify-start overflow-y-auto">
+                <div id="menu-text-content" class="whitespace-pre-line leading-loose"></div>
+            </div>
+        </div>
+
+        <!-- Player Status Bar -->
+        <div class="w-full flex justify-between items-center text-xs mb-3 px-2">
+            <div>ФРИСК <span class="text-gray-400">УР 1</span></div>
+            <div class="flex items-center gap-2">
+                <span class="text-yellow-400 font-bold">ОЗ</span>
+                <div class="w-40 bg-red-900 h-4 rounded-sm overflow-hidden relative border border-yellow-500">
+                    <div id="player-hp-bar" class="bg-yellow-400 h-full w-full transition-all duration-150"></div>
+                </div>
+                <span id="player-hp-text">50 / 50</span>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full mb-2">
+            <button id="btn-fight" class="ut-btn selected" onclick="selectAction('FIGHT')">⚔️ АТАКА</button>
+            <button id="btn-act" class="ut-btn" onclick="selectAction('ACT')">💬 ДЕЙСТВИЕ</button>
+            <button id="btn-item" class="ut-btn" onclick="selectAction('ITEM')">🍎 ВЕЩИ</button>
+            <button id="btn-mercy" class="ut-btn" onclick="selectAction('MERCY')">💛 ПОЩАДА</button>
+        </div>
+
+        <!-- On-screen controls for mobile/touch -->
+        <div class="w-full sm:hidden grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-800">
+            <div></div>
+            <button class="bg-gray-800 active:bg-gray-700 py-3 rounded text-center text-lg select-none" id="touch-up">▲</button>
+            <div></div>
+            <button class="bg-gray-800 active:bg-gray-700 py-3 rounded text-center text-lg select-none" id="touch-left">◀</button>
+            <button class="bg-gray-800 active:bg-gray-700 py-3 rounded text-center text-lg select-none" id="touch-down">▼</button>
+            <button class="bg-gray-800 active:bg-gray-700 py-3 rounded text-center text-lg select-none" id="touch-right">▶</button>
+        </div>
+    </div>
+
+    <!-- Game Over / Victory Modal -->
+    <div id="game-modal" class="fixed inset-0 bg-black/90 flex flex-col items-center justify-center hidden z-50 p-4">
+        <h1 id="modal-title" class="text-2xl text-red-500 mb-4 text-center">ИГРА ОКОНЧЕНА</h1>
+        <p id="modal-desc" class="text-sm text-gray-300 text-center mb-6 max-w-md leading-relaxed"></p>
+        <button onclick="restartGame()" class="ut-btn text-lg px-6 py-3 border-white text-white hover:border-yellow-400">ПОПРОБОВАТЬ СНОВА</button>
+    </div>
+
+    <script>
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playBlip() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.05);
+            }
+
+            playWind() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(140, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(260, this.ctx.currentTime + 0.35);
+                gain.gain.setValueAtTime(0.06, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.35);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.35);
+            }
+
+            playHurt() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(160, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(40, this.ctx.currentTime + 0.25);
+                gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            }
+
+            playHit() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(110, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(340, this.ctx.currentTime + 0.18);
+                gain.gain.setValueAtTime(0.22, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.18);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.18);
+            }
+        }
+
+        const audio = new SoundFX();
+
+        const state = {
+            gameState: 'MENU', // 'MENU', 'ATTACK_TARGET', 'DODGE_PHASE', 'GAMEOVER'
+            player: {
+                x: 220,
+                y: 95,
+                size: 20, // Proper Undertale size (~20px)
+                speed: 2.8, // Balanced, smooth movement speed
+                hp: 50,
+                maxHp: 50,
+                invincible: false,
+                invincibilityTimer: 0
+            },
+            boss: {
+                hp: 450, // 1.5x of 300 HP
+                maxHp: 450,
+                isRed: false,
+                purpleRatio: 0,
+                spared: false,
+                respectCount: 0
+            },
+            items: [
+                { name: 'Ирисковый Пирог', heal: 30 },
+                { name: 'Морской Чай', heal: 20 }
+            ],
+            currentMenuCategory: 'MAIN',
+            projectiles: [],
+            warnings: [],
+            keys: {},
+            targetSlider: {
+                x: 30,
+                dir: 1,
+                speed: 5.5,
+                active: false
+            },
+            attackPatternIndex: 0
+        };
+
+        const battleCanvas = document.getElementById('battleCanvas');
+        const bCtx = battleCanvas.getContext('2d');
+        const bossCanvas = document.getElementById('bossCanvas');
+        const bossCtx = bossCanvas.getContext('2d');
+        const menuTextBox = document.getElementById('menu-text-box');
+        const menuTextContent = document.getElementById('menu-text-content');
+        const speechBubble = document.getElementById('speech-bubble');
+        const speechText = document.getElementById('speech-text');
+
+        function drawBoss() {
+            bossCtx.clearRect(0, 0, bossCanvas.width, bossCanvas.height);
+
+            const hpRatio = state.boss.hp / state.boss.maxHp;
+            state.boss.purpleRatio = Math.max(0, 1 - hpRatio);
+
+            const time = Date.now() * 0.0025;
+            const floatY = Math.sin(time) * 4;
+
+            const cx = bossCanvas.width / 2;
+            const cy = 96 + floatY;
+
+            // Palette matching the selfie photo accurately
+            let skinColor = { r: 92, g: 62, b: 48 };
+            let darkSkin = { r: 58, g: 36, b: 26 };
+            let hoodieColor = { r: 28, g: 28, b: 32 };
+            let hoodieAccent = { r: 100, g: 100, b: 105 };
+
+            // Smooth Violet/Purple tint upon dying ("при вымирании фиолетует")
+            if (state.boss.purpleRatio > 0) {
+                const pr = state.boss.purpleRatio;
+                skinColor = blendRGB(skinColor, { r: 140, g: 25, b: 165 }, pr * 0.85);
+                darkSkin = blendRGB(darkSkin, { r: 85, g: 10, b: 110 }, pr * 0.85);
+                hoodieColor = blendRGB(hoodieColor, { r: 70, g: 15, b: 90 }, pr * 0.7);
+            }
+
+            // Red Overlay when launching air attacks
+            if (state.boss.isRed) {
+                skinColor = { r: 220, g: 50, b: 50 };
+                darkSkin = { r: 150, g: 25, b: 25 };
+                hoodieColor = { r: 130, g: 18, b: 18 };
+                hoodieAccent = { r: 255, g: 100, b: 100 };
+            }
+
+            // --- DRAW HOODIE & CLOTHING ---
+            bossCtx.fillStyle = rgbStr(hoodieColor);
+            bossCtx.beginPath();
+            bossCtx.ellipse(cx, cy + 90, 82, 50, 0, 0, Math.PI * 2);
+            bossCtx.fill();
+
+            // Grey stripe across upper chest
+            bossCtx.fillStyle = rgbStr(hoodieAccent);
+            bossCtx.fillRect(cx - 60, cy + 62, 120, 20);
+
+            // --- DRAW HEAD & FACE (PROPORTIONAL TO PHOTO) ---
+            bossCtx.fillStyle = rgbStr(skinColor);
+            bossCtx.beginPath();
+            bossCtx.ellipse(cx, cy, 42, 52, 0, 0, Math.PI * 2);
+            bossCtx.fill();
+
+            // Hair / Stubble Top
+            bossCtx.fillStyle = state.boss.isRed ? '#660000' : '#1a0e0a';
+            bossCtx.beginPath();
+            bossCtx.ellipse(cx, cy - 22, 43, 32, 0, Math.PI, Math.PI * 2);
+            bossCtx.fill();
+
+            // Jawline & Shadows
+            bossCtx.fillStyle = rgbStr(darkSkin);
+            bossCtx.beginPath();
+            bossCtx.ellipse(cx, cy + 24, 30, 24, 0, 0, Math.PI);
+            bossCtx.fill();
+
+            // --- EYES ---
+            bossCtx.fillStyle = state.boss.isRed ? '#ffff00' : '#ffffff';
+            bossCtx.fillRect(cx - 24, cy - 8, 14, 8);
+            bossCtx.fillRect(cx + 10, cy - 8, 14, 8);
+
+            // Pupils
+            bossCtx.fillStyle = '#000000';
+            bossCtx.fillRect(cx - 19, cy - 6, 6, 6);
+            bossCtx.fillRect(cx + 13, cy - 6, 6, 6);
+
+            // Eyebrows
+            bossCtx.fillStyle = state.boss.isRed ? '#ff0000' : '#1e0d08';
+            bossCtx.fillRect(cx - 27, cy - 15, 18, 5);
+            bossCtx.fillRect(cx + 9, cy - 15, 18, 5);
+
+            // Nose & Lips
+            bossCtx.fillStyle = rgbStr(darkSkin);
+            bossCtx.fillRect(cx - 7, cy - 2, 14, 20);
+
+            bossCtx.fillStyle = state.boss.isRed ? '#ff9999' : '#4e2d21';
+            bossCtx.fillRect(cx - 18, cy + 24, 36, 11);
+            bossCtx.fillStyle = '#100500';
+            bossCtx.fillRect(cx - 14, cy + 28, 28, 2);
+
+            // Beard Stubble Outline
+            bossCtx.strokeStyle = state.boss.isRed ? '#990000' : '#26120b';
+            bossCtx.lineWidth = 2.5;
+            bossCtx.beginPath();
+            bossCtx.arc(cx, cy + 20, 26, 0.2 * Math.PI, 0.8 * Math.PI);
+            bossCtx.stroke();
+
+            // Red Wind Aura Effect when attacking
+            if (state.boss.isRed) {
+                bossCtx.strokeStyle = 'rgba(255, 60, 60, 0.65)';
+                bossCtx.lineWidth = 3;
+                for (let i = 1; i <= 3; i++) {
+                    const radius = 54 + i * 14 + (Date.now() % 350) / 10;
+                    bossCtx.beginPath();
+                    bossCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+                    bossCtx.stroke();
+                }
+            }
+        }
+
+        function blendRGB(c1, c2, ratio) {
+            return {
+                r: Math.round(c1.r * (1 - ratio) + c2.r * ratio),
+                g: Math.round(c1.g * (1 - ratio) + c2.g * ratio),
+                b: Math.round(c1.b * (1 - ratio) + c2.b * ratio)
+            };
+        }
+
+        function rgbStr(c) {
+            return `rgb(${c.r}, ${c.g}, ${c.b})`;
+        }
+
+        function drawBattleArea() {
+            bCtx.clearRect(0, 0, battleCanvas.width, battleCanvas.height);
+
+            if (state.gameState === 'DODGE_PHASE') {
+                menuTextBox.classList.add('hidden');
+
+                // Render Telegraph Warning Lines
+                state.warnings.forEach(w => {
+                    bCtx.fillStyle = 'rgba(255, 50, 50, 0.25)';
+                    bCtx.fillRect(w.x, w.y, w.w, w.h);
+                    bCtx.strokeStyle = '#ff3333';
+                    bCtx.lineWidth = 1.5;
+                    bCtx.strokeRect(w.x, w.y, w.w, w.h);
+                });
+
+                // Render Pure Air / Wind Projectiles
+                state.projectiles.forEach(p => {
+                    bCtx.save();
+                    bCtx.translate(p.x, p.y);
+
+                    if (p.type === 'WIND_RING') {
+                        // Expanding Wind Ring
+                        bCtx.strokeStyle = p.color || '#38bdf8';
+                        bCtx.lineWidth = 3.5;
+                        bCtx.beginPath();
+                        bCtx.arc(0, 0, p.radius, 0, Math.PI * 2);
+                        bCtx.stroke();
+                    } else if (p.type === 'AIR_DROPLET') {
+                        // Falling Air-Pressure Droplet Gust
+                        bCtx.fillStyle = p.color || 'rgba(56, 189, 248, 0.85)';
+                        bCtx.beginPath();
+                        bCtx.arc(0, 0, p.radius, 0, Math.PI * 2);
+                        bCtx.fill();
+
+                        bCtx.strokeStyle = '#ffffff';
+                        bCtx.lineWidth = 1;
+                        bCtx.stroke();
+                    } else {
+                        // Curved Wind Arc Wave
+                        bCtx.rotate(p.angle || 0);
+                        bCtx.strokeStyle = p.color || '#38bdf8';
+                        bCtx.lineWidth = p.thickness || 3.5;
+                        bCtx.beginPath();
+                        bCtx.arc(0, 0, p.radius, 0.2 * Math.PI, 0.8 * Math.PI);
+                        bCtx.stroke();
+
+                        bCtx.strokeStyle = '#ffffff';
+                        bCtx.lineWidth = 1.5;
+                        bCtx.beginPath();
+                        bCtx.arc(0, 0, p.radius * 0.5, 0.3 * Math.PI, 0.7 * Math.PI);
+                        bCtx.stroke();
+                    }
+
+                    bCtx.restore();
+                });
+
+                // Render Player Red Soul (Heart) - Standard Undertale Size
+                if (!state.player.invincible || Math.floor(Date.now() / 90) % 2 === 0) {
+                    drawHeart(state.player.x, state.player.y, state.player.size, '#ff0000');
+                }
+
+            } else if (state.gameState === 'ATTACK_TARGET') {
+                menuTextBox.classList.add('hidden');
+                
+                // Target Bar Frame
+                bCtx.strokeStyle = '#ffffff';
+                bCtx.lineWidth = 4;
+                bCtx.strokeRect(15, 15, battleCanvas.width - 30, battleCanvas.height - 30);
+
+                // Target Circle
+                bCtx.beginPath();
+                bCtx.ellipse(battleCanvas.width / 2, battleCanvas.height / 2, 170, 60, 0, 0, Math.PI * 2);
+                bCtx.strokeStyle = '#555555';
+                bCtx.lineWidth = 5;
+                bCtx.stroke();
+
+                // Sweet Spot Center
+                bCtx.fillStyle = '#ff0000';
+                bCtx.fillRect(battleCanvas.width / 2 - 14, 20, 28, battleCanvas.height - 40);
+                bCtx.fillStyle = '#ffff00';
+                bCtx.fillRect(battleCanvas.width / 2 - 5, 20, 10, battleCanvas.height - 40);
+
+                // Attack Slider Line
+                const sliderX = state.targetSlider.x;
+                bCtx.fillStyle = '#ffffff';
+                bCtx.fillRect(sliderX - 4, 18, 8, battleCanvas.height - 36);
+                bCtx.strokeStyle = '#000000';
+                bCtx.lineWidth = 1;
+                bCtx.strokeRect(sliderX - 4, 18, 8, battleCanvas.height - 36);
+            }
+        }
+
+        // Draw Soul Heart
+        function drawHeart(x, y, size, color) {
+            bCtx.fillStyle = color;
+            bCtx.beginPath();
+            const h = size * 0.3;
+            bCtx.moveTo(x, y + h);
+            bCtx.bezierCurveTo(x, y, x - size / 2, y, x - size / 2, y + h);
+            bCtx.bezierCurveTo(x - size / 2, y + (size + h) / 2, x, y + size, x, y + size);
+            bCtx.bezierCurveTo(x, y + size, x + size / 2, y + (size + h) / 2, x + size / 2, y + h);
+            bCtx.bezierCurveTo(x + size / 2, y, x, y, x, y + h);
+            bCtx.closePath();
+            bCtx.fill();
+        }
+
+        function startWindAttackPhase() {
+            state.gameState = 'DODGE_PHASE';
+            state.boss.isRed = true;
+            showSpeech("Потоки воздуха! Держи баланс!");
+
+            state.projectiles = [];
+            state.warnings = [];
+            state.player.x = battleCanvas.width / 2;
+            state.player.y = battleCanvas.height / 2;
+
+            let attackTimer = 0;
+            const attackDuration = 380; // ~6.3 Seconds per turn
+            const pattern = state.attackPatternIndex % 3;
+            state.attackPatternIndex++;
+
+            const attackInterval = setInterval(() => {
+                if (state.gameState !== 'DODGE_PHASE') {
+                    clearInterval(attackInterval);
+                    return;
+                }
+
+                attackTimer++;
+
+                // PATTERN 0: Air Blast Streams with Warning Telegraph
+                if (pattern === 0) {
+                    if (attackTimer % 55 === 10) {
+                        const targetY = Math.random() * (battleCanvas.height - 50) + 25;
+                        state.warnings.push({ x: 0, y: targetY - 18, w: battleCanvas.width, h: 36, timer: 22 });
+                        
+                        setTimeout(() => {
+                            if (state.gameState === 'DODGE_PHASE') {
+                                audio.playWind();
+                                state.projectiles.push({
+                                    type: 'WIND_WAVE',
+                                    x: -25,
+                                    y: targetY,
+                                    vx: 2.1,
+                                    vy: 0,
+                                    radius: 20,
+                                    angle: Math.PI * 1.5,
+                                    thickness: 4,
+                                    color: '#ff4444'
+                                });
+                            }
+                        }, 420);
+                    }
+                }
+
+                // PATTERN 1: Air Pressure Droplet Swirls (Swaying downward droplets)
+                else if (pattern === 1) {
+                    if (attackTimer % 38 === 0) {
+                        audio.playWind();
+                        const startX = Math.random() * (battleCanvas.width - 60) + 30;
+                        state.projectiles.push({
+                            type: 'AIR_DROPLET',
+                            x: startX,
+                            y: -15,
+                            vx: Math.sin(attackTimer * 0.1) * 0.9,
+                            vy: 1.5, // Fair dodgeable speed
+                            radius: 9,
+                            color: '#38bdf8'
+                        });
+                    }
+                }
+
+                // PATTERN 2: Expanding Air Rings & Side Gusts
+                else if (pattern === 2) {
+                    if (attackTimer % 65 === 0) {
+                        audio.playWind();
+                        const rx = Math.random() * (battleCanvas.width - 120) + 60;
+                        const ry = Math.random() * (battleCanvas.height - 80) + 40;
+                        state.projectiles.push({
+                            type: 'WIND_RING',
+                            x: rx,
+                            y: ry,
+                            vx: 0,
+                            vy: 0,
+                            radius: 5,
+                            maxRadius: 46,
+                            color: '#bae6fd'
+                        });
+                    }
+
+                    // Expand ring radiuses
+                    state.projectiles.forEach(p => {
+                        if (p.type === 'WIND_RING') {
+                            p.radius += 0.85;
+                        }
+                    });
+                }
+
+                // Clean up expired warnings
+                state.warnings = state.warnings.filter(w => {
+                    w.timer--;
+                    return w.timer > 0;
+                });
+
+                // End Attack Turn
+                if (attackTimer >= attackDuration) {
+                    clearInterval(attackInterval);
+                    state.boss.isRed = false;
+                    hideSpeech();
+                    resetToMenu("Поток воздуха утих. Твой черед!");
+                }
+            }, 1000 / 60);
+        }
+
+        function update() {
+            if (state.gameState === 'DODGE_PHASE') {
+                let dx = 0;
+                let dy = 0;
+
+                if (state.keys['ArrowLeft'] || state.keys['KeyA']) dx -= 1;
+                if (state.keys['ArrowRight'] || state.keys['KeyD']) dx += 1;
+                if (state.keys['ArrowUp'] || state.keys['KeyW']) dy -= 1;
+                if (state.keys['ArrowDown'] || state.keys['KeyS']) dy += 1;
+
+                if (dx !== 0 && dy !== 0) {
+                    dx *= 0.7071;
+                    dy *= 0.7071;
+                }
+
+                state.player.x += dx * state.player.speed;
+                state.player.y += dy * state.player.speed;
+
+                const margin = state.player.size / 2;
+                state.player.x = Math.max(margin, Math.min(battleCanvas.width - margin, state.player.x));
+                state.player.y = Math.max(margin, Math.min(battleCanvas.height - margin, state.player.y));
+
+                if (state.player.invincible) {
+                    state.player.invincibilityTimer--;
+                    if (state.player.invincibilityTimer <= 0) {
+                        state.player.invincible = false;
+                    }
+                }
+
+                for (let i = state.projectiles.length - 1; i >= 0; i--) {
+                    const p = state.projectiles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+
+                    const hitboxRadius = (p.type === 'WIND_RING') ? Math.abs(p.radius - 2) : p.radius;
+                    const dist = Math.hypot(p.x - state.player.x, p.y - state.player.y);
+
+                    const isColliding = (p.type === 'WIND_RING') 
+                        ? Math.abs(dist - p.radius) < 7 
+                        : dist < (hitboxRadius + state.player.size / 3.5);
+
+                    if (isColliding && !state.player.invincible) {
+                        takeDamage(4);
+                    }
+
+                    if (p.type === 'WIND_RING' && p.radius >= p.maxRadius) {
+                        state.projectiles.splice(i, 1);
+                    } else if (p.x < -40 || p.x > battleCanvas.width + 40 || p.y < -40 || p.y > battleCanvas.height + 40) {
+                        state.projectiles.splice(i, 1);
+                    }
+                }
+            }
+
+            if (state.gameState === 'ATTACK_TARGET') {
+                state.targetSlider.x += state.targetSlider.speed * state.targetSlider.dir;
+                if (state.targetSlider.x >= battleCanvas.width - 25) {
+                    state.targetSlider.dir = -1;
+                } else if (state.targetSlider.x <= 25) {
+                    state.targetSlider.dir = 1;
+                }
+            }
+
+            drawBoss();
+            drawBattleArea();
+
+            requestAnimationFrame(update);
+        }
+
+        function selectAction(type) {
+            audio.init();
+            audio.playBlip();
+
+            document.querySelectorAll('.ut-btn').forEach(btn => btn.classList.remove('selected'));
+
+            if (type === 'FIGHT') {
+                document.getElementById('btn-fight').classList.add('selected');
+                startAttackTarget();
+            } else if (type === 'ACT') {
+                document.getElementById('btn-act').classList.add('selected');
+                state.currentMenuCategory = 'ACT_SELECT';
+                showMenuOptions([
+                    "* Оценить (Check)",
+                    "* Поговорить (Talk)",
+                    "* Совместный вдох (Breathe)",
+                    "* Выказать уважение (Respect)"
+                ]);
+            } else if (type === 'ITEM') {
+                document.getElementById('btn-item').classList.add('selected');
+                state.currentMenuCategory = 'ITEM_SELECT';
+                if (state.items.length > 0) {
+                    showMenuOptions(state.items.map(i => `* ${i.name} (+${i.heal} ОЗ)`));
+                } else {
+                    showMenuOptions(["* Предметов больше нет."]);
+                }
+            } else if (type === 'MERCY') {
+                document.getElementById('btn-mercy').classList.add('selected');
+                state.currentMenuCategory = 'MERCY_SELECT';
+                if (state.boss.spared || state.boss.hp <= 120) {
+                    showMenuOptions(["* Пощадить (Spare) [ГОТОВО]"]);
+                } else {
+                    showMenuOptions(["* Пощадить (Spare) [Недоступно]"]);
+                }
+            }
+        }
+
+        function showMenuOptions(lines) {
+            state.gameState = 'MENU';
+            menuTextBox.classList.remove('hidden');
+            menuTextContent.innerHTML = lines.map((line, idx) => 
+                `<div class="cursor-pointer hover:text-yellow-300 my-1 py-1" onclick="handleMenuClick(${idx})">${line}</div>`
+            ).join('');
+        }
+
+        function showTextInBox(text) {
+            state.gameState = 'MENU';
+            menuTextBox.classList.remove('hidden');
+            menuTextContent.innerHTML = `<div>${text}</div>`;
+        }
+
+        function handleMenuClick(index) {
+            audio.playBlip();
+
+            if (state.currentMenuCategory === 'ACT_SELECT') {
+                if (index === 0) {
+                    showTextInBox("* ДЖОРДЖ ФЛОЙД — АТК 10 ЗАЩ 10.\n* Повелитель свежего воздуха. Цвет показывает состояние сил.");
+                } else if (index === 1) {
+                    showTextInBox("* Вы глубоко вдохнули и начали разговор.\n* Джордж Флойд улыбается и поддерживает вас.");
+                    showSpeech("Каждый заслуживает чистого воздуха!");
+                } else if (index === 2) {
+                    showTextInBox("* Вы вместе делаете глубокий вдох...\n* Атмосфера становится спокойной.");
+                    showSpeech("Вот так! Вдох... и выдох.");
+                    state.boss.respectCount++;
+                } else if (index === 3) {
+                    showTextInBox("* Вы выразили глубокое уважение.\n* Джордж Флойд растроган вашей добротой.");
+                    state.boss.respectCount += 2;
+                    if (state.boss.respectCount >= 3) {
+                        state.boss.spared = true;
+                    }
+                }
+                setTimeout(() => startWindAttackPhase(), 2200);
+
+            } else if (state.currentMenuCategory === 'ITEM_SELECT') {
+                if (state.items.length > 0 && index < state.items.length) {
+                    const item = state.items.splice(index, 1)[0];
+                    state.player.hp = Math.min(state.player.maxHp, state.player.hp + item.heal);
+                    updateUI();
+                    audio.playHit();
+                    showTextInBox(`* Вы съели ${item.name}.\n* Восстановлено ${item.heal} ОЗ!`);
+                    setTimeout(() => startWindAttackPhase(), 2000);
+                }
+            } else if (state.currentMenuCategory === 'MERCY_SELECT') {
+                if (state.boss.spared || state.boss.hp <= 120) {
+                    endGame(true, "Вы пощадили Джорджа Флойда! Битва завершилась миром.");
+                } else {
+                    showTextInBox("* Имя еще не пожелтело! Проявите больше уважения.");
+                    setTimeout(() => startWindAttackPhase(), 1800);
+                }
+            }
+        }
+
+        function startAttackTarget() {
+            state.gameState = 'ATTACK_TARGET';
+            state.targetSlider.x = 30;
+            state.targetSlider.dir = 1;
+            state.targetSlider.active = true;
+            menuTextBox.classList.add('hidden');
+        }
+
+        function executePlayerAttack() {
+            if (state.gameState !== 'ATTACK_TARGET') return;
+
+            const center = battleCanvas.width / 2;
+            const dist = Math.abs(state.targetSlider.x - center);
+            let damage = Math.max(0, Math.floor((1 - dist / 170) * 55));
+
+            if (damage > 0) {
+                state.boss.hp = Math.max(0, state.boss.hp - damage);
+                audio.playHit();
+                
+                bossCanvas.classList.add('boss-shake');
+                setTimeout(() => bossCanvas.classList.remove('boss-shake'), 350);
+
+                showTextInBox(`* Нанесен урон: ${damage}!`);
+            } else {
+                showTextInBox(`* Промах!`);
+            }
+
+            updateUI();
+
+            if (state.boss.hp <= 0) {
+                setTimeout(() => {
+                    endGame(true, "Вы победили Джорджа Флойда! Воздушный шторм утих.");
+                }, 1400);
+            } else {
+                setTimeout(() => {
+                    startWindAttackPhase();
+                }, 1600);
+            }
+        }
+
+        function takeDamage(amount) {
+            state.player.hp = Math.max(0, state.player.hp - amount);
+            state.player.invincible = true;
+            state.player.invincibilityTimer = 45;
+            audio.playHurt();
+            updateUI();
+
+            if (state.player.hp <= 0) {
+                endGame(false, "Ваша душа разбилась... Наберитесь решимости!");
+            }
+        }
+
+        function updateUI() {
+            const playerHpPercent = (state.player.hp / state.player.maxHp) * 100;
+            document.getElementById('player-hp-bar').style.width = `${playerHpPercent}%`;
+            document.getElementById('player-hp-text').innerText = `${state.player.hp} / ${state.player.maxHp}`;
+
+            const bossHpPercent = (state.boss.hp / state.boss.maxHp) * 100;
+            document.getElementById('boss-hp-bar').style.width = `${bossHpPercent}%`;
+        }
+
+        function showSpeech(text) {
+            speechText.innerText = text;
+            speechBubble.classList.remove('hidden');
+        }
+
+        function hideSpeech() {
+            speechBubble.classList.add('hidden');
+        }
+
+        function resetToMenu(text) {
+            state.gameState = 'MENU';
+            state.currentMenuCategory = 'MAIN';
+            showTextInBox(`* ${text}`);
+        }
+
+        function endGame(isWin, message) {
+            state.gameState = 'GAMEOVER';
+            const modal = document.getElementById('game-modal');
+            const title = document.getElementById('modal-title');
+            const desc = document.getElementById('modal-desc');
+
+            title.innerText = isWin ? "ПОБЕДА!" : "ИГРА ОКОНЧЕНА";
+            title.className = isWin ? "text-2xl text-yellow-400 mb-4 text-center" : "text-2xl text-red-500 mb-4 text-center";
+            desc.innerText = message;
+            modal.classList.remove('hidden');
+        }
+
+        function restartGame() {
+            state.player.hp = 50;
+            state.boss.hp = 450;
+            state.boss.spared = false;
+            state.boss.respectCount = 0;
+            state.items = [
+                { name: 'Ирисковый Пирог', heal: 30 },
+                { name: 'Морской Чай', heal: 20 }
+            ];
+            document.getElementById('game-modal').classList.add('hidden');
+            updateUI();
+            resetToMenu("Джордж Флойд заступил на путь!");
+        }
+
+        window.addEventListener('keydown', (e) => {
+            state.keys[e.code] = true;
+
+            if (e.code === 'Space' || e.code === 'Enter') {
+                if (state.gameState === 'ATTACK_TARGET') {
+                    executePlayerAttack();
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            state.keys[e.code] = false;
+        });
+
+        const bindTouch = (id, key) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); state.keys[key] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); state.keys[key] = false; });
+        };
+        bindTouch('touch-up', 'ArrowUp');
+        bindTouch('touch-down', 'ArrowDown');
+        bindTouch('touch-left', 'ArrowLeft');
+        bindTouch('touch-right', 'ArrowRight');
+
+        battleCanvas.addEventListener('click', () => {
+            if (state.gameState === 'ATTACK_TARGET') {
+                executePlayerAttack();
+            }
+        });
+
+        window.onload = () => {
+            resetToMenu("Джордж Флойд заступил на путь!");
+            updateUI();
+            requestAnimationFrame(update);
+        };
+    </script>
+</body>
+</html>
