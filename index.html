@@ -19,7 +19,6 @@
             image-rendering: pixelated;
         }
 
-        /* Undertale UI Button Styles */
         .ut-btn {
             border: 3px solid #ff7900;
             color: #ff7900;
@@ -65,9 +64,24 @@
         .boss-shake {
             animation: shake 0.35s ease-in-out;
         }
+
+        @keyframes mangoJump {
+            0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+            25% { transform: translate(120px, -80px) scale(1.3) rotate(15deg); }
+            50% { transform: translate(-100px, -40px) scale(0.9) rotate(-20deg); }
+            75% { transform: translate(140px, 60px) scale(1.4) rotate(10deg); }
+            100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+        }
+        .mango-anim {
+            animation: mangoJump 0.6s infinite ease-in-out;
+        }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center min-h-screen p-2 sm:p-4 overflow-hidden select-none">
+
+    <!-- Аудиофайлы -->
+    <audio id="sound-phase2-start" src="ssstik.io_1791056260378.mp3" preload="auto"></audio>
+    <audio id="sound-mango" src="ssstik.io_1791056287817.mp3" preload="auto" loop></audio>
 
     <div class="w-full max-w-2xl bg-black border-4 border-gray-800 p-4 rounded-lg flex flex-col items-center relative">
         
@@ -80,9 +94,14 @@
         </div>
 
         <!-- Boss Display Area -->
-        <div class="w-full flex justify-center items-center h-56 relative mb-2">
+        <div class="w-full flex justify-center items-center h-56 relative mb-2 overflow-hidden">
             <canvas id="bossCanvas" width="240" height="220" class="pixel-art"></canvas>
             
+            <!-- Прыгающий Манго -->
+            <div id="mango-element" class="absolute hidden z-30 flex flex-col items-center justify-center">
+                <span class="text-6xl mango-anim">🥭</span>
+            </div>
+
             <!-- Speech Bubble -->
             <div id="speech-bubble" class="absolute top-2 right-2 sm:right-6 bg-white text-black p-3 rounded-xl border-2 border-black max-w-[210px] text-[10px] leading-relaxed hidden shadow-xl z-20">
                 <span id="speech-text">...</span>
@@ -212,8 +231,9 @@
         const audio = new SoundFX();
 
         const state = {
-            gameState: 'MENU', // 'MENU', 'ATTACK_TARGET', 'DODGE_PHASE', 'GAMEOVER'
-            actionLocked: false, // Флаг блокировки кликов атаки
+            gameState: 'MENU',
+            actionLocked: false,
+            phase2Triggered: false,
             player: {
                 x: 220,
                 y: 95,
@@ -258,6 +278,40 @@
         const speechBubble = document.getElementById('speech-bubble');
         const speechText = document.getElementById('speech-text');
 
+        const audioPhase2Start = document.getElementById('sound-phase2-start');
+        const audioMango = document.getElementById('sound-mango');
+        const mangoElement = document.getElementById('mango-element');
+
+        function triggerPhase2Sequence(onComplete) {
+            state.phase2Triggered = true;
+            state.actionLocked = true;
+            setButtonsDisabled(true);
+
+            showTextInBox("🔥 ФАЗА 2 НАЧАЛАСЬ! 🔥");
+            showSpeech("ТЫ ПОЧУВСТВУЕШЬ НАСТОЯЩУЮ СИЛУ!");
+
+            // 1. Первый звук играется 5 секунд
+            audioPhase2Start.currentTime = 0;
+            audioPhase2Start.play().catch(() => {});
+
+            setTimeout(() => {
+                audioPhase2Start.pause();
+
+                // 2. Манго прыгает 5 секунд со вторым звуком
+                mangoElement.classList.remove('hidden');
+                audioMango.currentTime = 0;
+                audioMango.play().catch(() => {});
+
+                setTimeout(() => {
+                    audioMango.pause();
+                    mangoElement.classList.add('hidden');
+                    
+                    if (onComplete) onComplete();
+                }, 5000);
+
+            }, 5000);
+        }
+
         function drawBoss() {
             bossCtx.clearRect(0, 0, bossCanvas.width, bossCanvas.height);
 
@@ -282,7 +336,7 @@
                 hoodieColor = blendRGB(hoodieColor, { r: 70, g: 15, b: 90 }, pr * 0.7);
             }
 
-            if (state.boss.isRed) {
+            if (state.boss.isRed || state.phase2Triggered) {
                 skinColor = { r: 220, g: 50, b: 50 };
                 darkSkin = { r: 150, g: 25, b: 25 };
                 hoodieColor = { r: 130, g: 18, b: 18 };
@@ -302,7 +356,7 @@
             bossCtx.ellipse(cx, cy, 42, 52, 0, 0, Math.PI * 2);
             bossCtx.fill();
 
-            bossCtx.fillStyle = state.boss.isRed ? '#660000' : '#1a0e0a';
+            bossCtx.fillStyle = (state.boss.isRed || state.phase2Triggered) ? '#660000' : '#1a0e0a';
             bossCtx.beginPath();
             bossCtx.ellipse(cx, cy - 22, 43, 32, 0, Math.PI, Math.PI * 2);
             bossCtx.fill();
@@ -312,7 +366,7 @@
             bossCtx.ellipse(cx, cy + 24, 30, 24, 0, 0, Math.PI);
             bossCtx.fill();
 
-            bossCtx.fillStyle = state.boss.isRed ? '#ffff00' : '#ffffff';
+            bossCtx.fillStyle = (state.boss.isRed || state.phase2Triggered) ? '#ffff00' : '#ffffff';
             bossCtx.fillRect(cx - 24, cy - 8, 14, 8);
             bossCtx.fillRect(cx + 10, cy - 8, 14, 8);
 
@@ -320,25 +374,25 @@
             bossCtx.fillRect(cx - 19, cy - 6, 6, 6);
             bossCtx.fillRect(cx + 13, cy - 6, 6, 6);
 
-            bossCtx.fillStyle = state.boss.isRed ? '#ff0000' : '#1e0d08';
+            bossCtx.fillStyle = (state.boss.isRed || state.phase2Triggered) ? '#ff0000' : '#1e0d08';
             bossCtx.fillRect(cx - 27, cy - 15, 18, 5);
             bossCtx.fillRect(cx + 9, cy - 15, 18, 5);
 
             bossCtx.fillStyle = rgbStr(darkSkin);
             bossCtx.fillRect(cx - 7, cy - 2, 14, 20);
 
-            bossCtx.fillStyle = state.boss.isRed ? '#ff9999' : '#4e2d21';
+            bossCtx.fillStyle = (state.boss.isRed || state.phase2Triggered) ? '#ff9999' : '#4e2d21';
             bossCtx.fillRect(cx - 18, cy + 24, 36, 11);
             bossCtx.fillStyle = '#100500';
             bossCtx.fillRect(cx - 14, cy + 28, 28, 2);
 
-            bossCtx.strokeStyle = state.boss.isRed ? '#990000' : '#26120b';
+            bossCtx.strokeStyle = (state.boss.isRed || state.phase2Triggered) ? '#990000' : '#26120b';
             bossCtx.lineWidth = 2.5;
             bossCtx.beginPath();
             bossCtx.arc(cx, cy + 20, 26, 0.2 * Math.PI, 0.8 * Math.PI);
             bossCtx.stroke();
 
-            if (state.boss.isRed) {
+            if (state.boss.isRed || state.phase2Triggered) {
                 bossCtx.strokeStyle = 'rgba(255, 60, 60, 0.65)';
                 bossCtx.lineWidth = 3;
                 for (let i = 1; i <= 3; i++) {
@@ -559,7 +613,7 @@
                 if (attackTimer >= attackDuration) {
                     clearInterval(attackInterval);
                     state.boss.isRed = false;
-                    state.actionLocked = false; // Снимаем блокировку перед началом хода игрока
+                    state.actionLocked = false;
                     setButtonsDisabled(false);
                     hideSpeech();
                     resetToMenu("Поток воздуха утих. Твой черед!");
@@ -636,7 +690,6 @@
         }
 
         function selectAction(type) {
-            // Запрет клика во время фазы атаки или если действие уже заблокировано
             if (state.gameState === 'DODGE_PHASE' || state.actionLocked) return;
 
             audio.init();
@@ -645,7 +698,7 @@
             document.querySelectorAll('.ut-btn').forEach(btn => btn.classList.remove('selected'));
 
             if (type === 'FIGHT') {
-                state.actionLocked = true; // Моментальная блокировка от двойного клика
+                state.actionLocked = true;
                 setButtonsDisabled(true);
                 document.getElementById('btn-fight').classList.add('selected');
                 startAttackTarget();
@@ -693,10 +746,20 @@
 
         function handleMenuClick(index) {
             if (state.actionLocked) return;
-            state.actionLocked = true; // Блокируем дальнейшие клики
+            state.actionLocked = true;
             setButtonsDisabled(true);
 
             audio.playBlip();
+
+            const continueNextTurn = () => {
+                if (!state.phase2Triggered && (state.boss.hp <= state.boss.maxHp * 0.5)) {
+                    triggerPhase2Sequence(() => {
+                        startWindAttackPhase();
+                    });
+                } else {
+                    startWindAttackPhase();
+                }
+            };
 
             if (state.currentMenuCategory === 'ACT_SELECT') {
                 if (index === 0) {
@@ -715,7 +778,7 @@
                         state.boss.spared = true;
                     }
                 }
-                setTimeout(() => startWindAttackPhase(), 2200);
+                setTimeout(continueNextTurn, 2200);
 
             } else if (state.currentMenuCategory === 'ITEM_SELECT') {
                 if (state.items.length > 0 && index < state.items.length) {
@@ -724,7 +787,7 @@
                     updateUI();
                     audio.playHit();
                     showTextInBox(`* Вы съели ${item.name}.\n* Восстановлено ${item.heal} ОЗ!`);
-                    setTimeout(() => startWindAttackPhase(), 2000);
+                    setTimeout(continueNextTurn, 2000);
                 } else {
                     state.actionLocked = false;
                     setButtonsDisabled(false);
@@ -734,7 +797,7 @@
                     endGame(true, "Вы пощадили Джорджа Флойда! Битва завершилась миром.");
                 } else {
                     showTextInBox("* Имя еще не пожелтело! Проявите больше уважения.");
-                    setTimeout(() => startWindAttackPhase(), 1800);
+                    setTimeout(continueNextTurn, 1800);
                 }
             }
         }
@@ -749,7 +812,7 @@
 
         function executePlayerAttack() {
             if (state.gameState !== 'ATTACK_TARGET' || !state.targetSlider.active) return;
-            state.targetSlider.active = false; // Исключаем повторный вызов удара
+            state.targetSlider.active = false;
 
             const center = battleCanvas.width / 2;
             const dist = Math.abs(state.targetSlider.x - center);
@@ -775,7 +838,14 @@
                 }, 1400);
             } else {
                 setTimeout(() => {
-                    startWindAttackPhase();
+                    // Проверка на активирование 2 фазы (при HP <= 50%)
+                    if (!state.phase2Triggered && (state.boss.hp <= state.boss.maxHp * 0.5)) {
+                        triggerPhase2Sequence(() => {
+                            startWindAttackPhase();
+                        });
+                    } else {
+                        startWindAttackPhase();
+                    }
                 }, 1600);
             }
         }
@@ -813,7 +883,7 @@
         function resetToMenu(text) {
             state.gameState = 'MENU';
             state.currentMenuCategory = 'MAIN';
-            state.actionLocked = false; // Отпираем меню на новом ходу
+            state.actionLocked = false;
             setButtonsDisabled(false);
             showTextInBox(`* ${text}`);
         }
@@ -836,11 +906,16 @@
             state.boss.hp = 450;
             state.boss.spared = false;
             state.boss.respectCount = 0;
+            state.boss.isRed = false;
+            state.phase2Triggered = false;
             state.actionLocked = false;
             state.items = [
                 { name: 'Ирисковый Пирог', heal: 30 },
                 { name: 'Морской Чай', heal: 20 }
             ];
+            mangoElement.classList.add('hidden');
+            audioPhase2Start.pause();
+            audioMango.pause();
             setButtonsDisabled(false);
             document.getElementById('game-modal').classList.add('hidden');
             updateUI();
