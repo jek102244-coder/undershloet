@@ -66,14 +66,22 @@
         }
 
         @keyframes mangoJump {
-            0% { transform: translate(0, 0) scale(1) rotate(0deg); }
-            25% { transform: translate(120px, -80px) scale(1.3) rotate(15deg); }
-            50% { transform: translate(-100px, -40px) scale(0.9) rotate(-20deg); }
-            75% { transform: translate(140px, 60px) scale(1.4) rotate(10deg); }
-            100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+            0% { transform: translate(-120px, 40px) scale(1) rotate(0deg); }
+            25% { transform: translate(100px, -60px) scale(1.3) rotate(15deg); }
+            50% { transform: translate(-80px, -20px) scale(0.9) rotate(-20deg); }
+            75% { transform: translate(120px, 50px) scale(1.4) rotate(10deg); }
+            100% { transform: translate(-120px, 40px) scale(1) rotate(0deg); }
         }
         .mango-anim {
-            animation: mangoJump 0.6s infinite ease-in-out;
+            animation: mangoJump 0.8s infinite ease-in-out;
+        }
+
+        @keyframes spongebobFloat {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        .spongebob-anim {
+            animation: spongebobFloat 1.5s infinite ease-in-out;
         }
     </style>
 </head>
@@ -96,8 +104,14 @@
         <!-- Boss Display Area -->
         <div class="w-full flex justify-center items-center h-56 relative mb-2 overflow-hidden">
             <canvas id="bossCanvas" width="240" height="220" class="pixel-art"></canvas>
+
+            <!-- Губка Боб справа во 2 фазе -->
+            <div id="spongebob-element" class="absolute right-4 sm:right-10 top-12 hidden z-20 spongebob-anim text-center">
+                <span class="text-5xl">🧽</span>
+                <div class="text-[9px] text-yellow-300 font-bold mt-1">Губка Боб</div>
+            </div>
             
-            <!-- Прыгающий Манго -->
+            <!-- Прыгающий Манго (Новая способность во 2 фазе) -->
             <div id="mango-element" class="absolute hidden z-30 flex flex-col items-center justify-center">
                 <span class="text-6xl mango-anim">🥭</span>
             </div>
@@ -281,14 +295,18 @@
         const audioPhase2Start = document.getElementById('sound-phase2-start');
         const audioMango = document.getElementById('sound-mango');
         const mangoElement = document.getElementById('mango-element');
+        const spongebobElement = document.getElementById('spongebob-element');
 
         function triggerPhase2Sequence(onComplete) {
             state.phase2Triggered = true;
             state.actionLocked = true;
             setButtonsDisabled(true);
 
-            showTextInBox("🔥 ФАЗА 2 НАЧАЛАСЬ! 🔥");
-            showSpeech("ТЫ ПОЧУВСТВУЕШЬ НАСТОЯЩУЮ СИЛУ!");
+            // Появляется Губка Боб справа
+            spongebobElement.classList.remove('hidden');
+
+            showTextInBox("🔥 ФАЗА 2! ГУБКА БОБ И МАНГО ПРИБЫЛИ! 🔥");
+            showSpeech("МАНГО И ГУБКА БОБ ВСТУПАЮТ В БОЙ!");
 
             // 1. Первый звук играется 5 секунд
             audioPhase2Start.currentTime = 0;
@@ -434,7 +452,15 @@
                     bCtx.save();
                     bCtx.translate(p.x, p.y);
 
-                    if (p.type === 'WIND_RING') {
+                    if (p.type === 'MANGO_SHOT') {
+                        bCtx.fillStyle = '#ffcc00';
+                        bCtx.beginPath();
+                        bCtx.arc(0, 0, p.radius, 0, Math.PI * 2);
+                        bCtx.fill();
+                        bCtx.strokeStyle = '#ff6600';
+                        bCtx.lineWidth = 2;
+                        bCtx.stroke();
+                    } else if (p.type === 'WIND_RING') {
                         bCtx.strokeStyle = p.color || '#38bdf8';
                         bCtx.lineWidth = 3.5;
                         bCtx.beginPath();
@@ -523,7 +549,12 @@
             state.gameState = 'DODGE_PHASE';
             state.boss.isRed = true;
             setButtonsDisabled(true);
-            showSpeech("Потоки воздуха! Держи баланс!");
+
+            if (state.phase2Triggered) {
+                showSpeech("СПУЩЕНО СПОСОБНОСТИ МАНГО И ГУБКИ БОБА!");
+            } else {
+                showSpeech("Потоки воздуха! Держи баланс!");
+            }
 
             state.projectiles = [];
             state.warnings = [];
@@ -542,6 +573,19 @@
                 }
 
                 attackTimer++;
+
+                // Новая способность Манго во 2 фазе (дополнительные выстрелы манго)
+                if (state.phase2Triggered && attackTimer % 25 === 0) {
+                    audio.playWind();
+                    state.projectiles.push({
+                        type: 'MANGO_SHOT',
+                        x: Math.random() * battleCanvas.width,
+                        y: -10,
+                        vx: (Math.random() - 0.5) * 2,
+                        vy: 2.8,
+                        radius: 8
+                    });
+                }
 
                 if (pattern === 0) {
                     if (attackTimer % 55 === 10) {
@@ -816,7 +860,7 @@
 
             const center = battleCanvas.width / 2;
             const dist = Math.abs(state.targetSlider.x - center);
-            let damage = Math.max(0, Math.floor((1 - dist / 170) * 55));
+            let damage = Math.max(0, Math.floor((1 - dist / 170) * 120)); // Увеличенный урон для быстрого перехода к 2 фазе
 
             if (damage > 0) {
                 state.boss.hp = Math.max(0, state.boss.hp - damage);
@@ -838,7 +882,7 @@
                 }, 1400);
             } else {
                 setTimeout(() => {
-                    // Проверка на активирование 2 фазы (при HP <= 50%)
+                    // Проверка на активацию 2 фазы (при HP <= 50%)
                     if (!state.phase2Triggered && (state.boss.hp <= state.boss.maxHp * 0.5)) {
                         triggerPhase2Sequence(() => {
                             startWindAttackPhase();
@@ -914,6 +958,7 @@
                 { name: 'Морской Чай', heal: 20 }
             ];
             mangoElement.classList.add('hidden');
+            spongebobElement.classList.add('hidden');
             audioPhase2Start.pause();
             audioMango.pause();
             setButtonsDisabled(false);
